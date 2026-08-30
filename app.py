@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import threading
+import asyncio
 from datetime import datetime
 from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -13,12 +14,12 @@ if not TOKEN:
     print("❌ Токен не найден! Добавьте TELEGRAM_BOT_TOKEN в переменные окружения Render.")
     exit(1)
 
-ADMIN_ID = 1240591787  # ТВОЙ ID
+ADMIN_ID = 1240591787
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ================= FLASK (ДЛЯ RENDER) =================
+# ================= FLASK =================
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -29,7 +30,7 @@ def home():
 def health():
     return "OK", 200
 
-# ================= БАЗА ДАННЫХ (JSON) =================
+# ================= БАЗА ДАННЫХ =================
 DATA_FILE = "bot_data.json"
 
 def load_data():
@@ -516,6 +517,9 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= ЗАПУСК БОТА В ПОТОКЕ =================
 def run_bot():
+    # СОЗДАЁМ НОВЫЙ EVENT LOOP (ЭТО ИСПРАВЛЯЕТ ОШИБКУ!)
+    asyncio.set_event_loop(asyncio.new_event_loop())
+    
     print("🚀 БОТ ЗАПУЩЕН!")
     application = Application.builder().token(TOKEN).build()
     
@@ -531,12 +535,10 @@ def run_bot():
 
 # ================= ОСНОВНОЙ ЗАПУСК =================
 if __name__ == "__main__":
-    # Запускаем бота в фоновом потоке
     bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
     print("🐍 Бот запущен в фоновом потоке")
     
-    # Запускаем Flask для Render
     port = int(os.environ.get("PORT", 10000))
     print(f"🌐 Запуск веб-сервера на порту {port}")
     flask_app.run(host="0.0.0.0", port=port)
