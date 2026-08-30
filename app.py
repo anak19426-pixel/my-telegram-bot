@@ -2,14 +2,12 @@ import os
 import json
 import logging
 import threading
-from flask import Flask
 from datetime import datetime
+from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 # ================= НАСТРОЙКИ =================
-# ВАЖНО! Токен берется из переменных окружения Render. 
-# Не забудьте добавить его в Settings -> Environment -> TELEGRAM_BOT_TOKEN
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
     print("❌ Токен не найден! Добавьте TELEGRAM_BOT_TOKEN в переменные окружения Render.")
@@ -20,12 +18,16 @@ ADMIN_ID = 1240591787  # ТВОЙ ID
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ================= FLASK ДЛЯ RENDER =================
-app = Flask(__name__)
+# ================= FLASK (ДЛЯ RENDER) =================
+flask_app = Flask(__name__)
 
-@app.route('/')
+@flask_app.route('/')
 def home():
-    return "Bot is running!"
+    return "🤖 Бот работает!", 200
+
+@flask_app.route('/health')
+def health():
+    return "OK", 200
 
 # ================= БАЗА ДАННЫХ (JSON) =================
 DATA_FILE = "bot_data.json"
@@ -289,7 +291,6 @@ inter@fa.ru"""
             await query.message.reply_text("❌ Карты временно недоступны. Попробуйте позже.")
             return
         
-        # Отправляем все карты
         for i, path in enumerate(valid_paths):
             try:
                 with open(path, 'rb') as f:
@@ -392,7 +393,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = context.user_data.get('state')
     username = update.effective_user.username or "Аноним"
     
-    # Проверка на нецензурную лексику
     bad_words = ['мат', 'хуй', 'пизда', 'бля', 'сука', 'залупа', 'мудак', 'редиска', 'нах', 'еба']
     has_bad_words = any(word in text.lower() for word in bad_words)
     
@@ -418,7 +418,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     ADMIN_ID,
                     f"📩 *Новый вопрос #{question_id}*\n\n"
                     f"От: @{username}\n"
-                    f"Вопрос: {text[:200]}"
+                    f"Вопрос: {text[:200]}",
+                    parse_mode="Markdown"
                 )
             except Exception as e:
                 logger.error(f"Не удалось уведомить админа: {e}")
@@ -445,7 +446,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
                 await context.bot.send_message(ADMIN_ID, admin_text, parse_mode="Markdown")
                 
-                # ОТПРАВЛЯЕМ ФОТО АДМИНУ!
                 if photo_id:
                     await context.bot.send_photo(ADMIN_ID, photo_id, caption=f"Фото к поломке #{report_id}")
             except Exception as e:
@@ -481,6 +481,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data['answering_question'] = None
             else:
                 await update.message.reply_text("⚠️ Не выбран вопрос для ответа.", reply_markup=get_admin_keyboard())
+    
+    else:
+        await update.message.reply_text(
+            "Используйте кнопки меню.",
+            reply_markup=get_main_keyboard()
+        )
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = context.user_data.get('state')
@@ -509,10 +515,9 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-# ================= ЗАПУСК =================
-def main():
+# ================= ЗАПУСК БОТА В ПОТОКЕ =================
+def run_bot():
     print("🚀 БОТ ЗАПУЩЕН!")
-    
     application = Application.builder().token(TOKEN).build()
     
     application.add_handler(CommandHandler("start", start))
@@ -523,18 +528,16 @@ def main():
     application.add_error_handler(error_handler)
     
     print("✅ БОТ ГОТОВ К РАБОТЕ!")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
-    # ЗАПУСК БОТА В ОТДЕЛЬНОМ ПОТОКЕ (чтобы не блокировать Flask)
-    def run_bot():
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
-
+# ================= ГЛАВНЫЙ ЗАПУСК =================
+if __name__ == "__main__":
+    # Запускаем бота в фоновом потоке
     bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
-
-    # ЗАПУСК FLASK, ЧТОБЫ RENDER ВИДЕЛ, ЧТО ПОРТ ЗАНЯТ
-    port = int(os.environ.get('PORT', 5000))
-    print(f"🌐 Запускаем Flask на порту {port}")
-    app.run(host='0.0.0.0', port=port)
-
-if __name__ == "__main__":
-    main()
+    print("🐍 Бот запущен в фоновом потоке")
+    
+    # Запускаем Flask для Render
+    port = int(os.environ.get("PORT", 10000))
+    print(f"🌐 Запуск веб-сервера на порту {port}")
+    flask_app.run(host="0.0.0.0", port=port)
