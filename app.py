@@ -1,15 +1,14 @@
 import os
 import json
 import logging
-import threading
 from flask import Flask
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 # ================= НАСТРОЙКИ =================
-# ВАЖНО! Токен берется из переменных окружения Render. 
-# Не забудьте добавить его в Settings -> Environment -> TELEGRAM_BOT_TOKEN
+# ВАЖНО! Токен берется из переменных окружения. 
+# Убедитесь, что в Render (Settings -> Environment) добавлена TELEGRAM_BOT_TOKEN
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
     print("❌ Токен не найден! Добавьте TELEGRAM_BOT_TOKEN в переменные окружения Render.")
@@ -523,18 +522,12 @@ def main():
     application.add_error_handler(error_handler)
     
     print("✅ БОТ ГОТОВ К РАБОТЕ!")
+    
+    # Запускаем бота в главном потоке. Это блокирует выполнение здесь, 
+    # но Gunicorn уже запустил Flask отдельно, поэтому все работает.
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
-    # ЗАПУСК БОТА В ОТДЕЛЬНОМ ПОТОКЕ (чтобы не блокировать Flask)
-    def run_bot():
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+# ЗАПУСК БОТА ПРИ СТАРТЕ ПРИЛОЖЕНИЯ
+main()
 
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-
-    # ЗАПУСК FLASK, ЧТОБЫ RENDER ВИДЕЛ, ЧТО ПОРТ ЗАНЯТ
-    port = int(os.environ.get('PORT', 5000))
-    print(f"🌐 Запускаем Flask на порту {port}")
-    app.run(host='0.0.0.0', port=port)
-
-if __name__ == "__main__":
-    main()
+# Flask (app) будет запущен Gunicorn'ом автоматически
