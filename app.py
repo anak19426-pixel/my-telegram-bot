@@ -1,14 +1,15 @@
 import os
 import json
 import logging
+import threading
 from flask import Flask
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 # ================= НАСТРОЙКИ =================
-# ВАЖНО! Токен берется из переменных окружения. 
-# Убедитесь, что в Render (Settings -> Environment) добавлена TELEGRAM_BOT_TOKEN
+# ВАЖНО! Токен берется из переменных окружения Render. 
+# Не забудьте добавить его в Settings -> Environment -> TELEGRAM_BOT_TOKEN
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
     print("❌ Токен не найден! Добавьте TELEGRAM_BOT_TOKEN в переменные окружения Render.")
@@ -108,23 +109,6 @@ def get_stats():
     answered_questions = sum(1 for q in data["questions"] if q["answered"])
     total_reports = len(data["reports"])
     return total_questions, answered_questions, total_reports
-
-# ================= НОВЫЕ ФУНКЦИИ ДЛЯ ПОЛОМОК =================
-def get_report_by_id(report_id):
-    data = load_data()
-    for r in data["reports"]:
-        if r["id"] == report_id:
-            return r
-    return None
-
-def answer_report(report_id, answer_text):
-    data = load_data()
-    for r in data["reports"]:
-        if r["id"] == report_id:
-            r["status"] = "answered"
-            r["answer"] = answer_text
-            break
-    save_data(data)
 
 # ================= КЛАВИАТУРЫ =================
 def get_main_keyboard():
@@ -351,18 +335,17 @@ inter@fa.ru"""
                 await query.message.reply_text("🔧 Сообщений о поломках пока нет.")
                 return
             
-            # ИЗМЕНЕНИЕ: Теперь список поломок кликабельный
             text = "🔧 *Сообщения о поломках:*\n\n"
-            keyboard = []
             for r in reports[-10:]:
-                status = "✅" if r["status"] == "answered" else "⏳"
-                text += f"{status} #{r['id']} | {r['description'][:40]}...\n"
+                text += f"#{r['id']} | {r['description'][:50]}...\n"
                 text += f"   Пользователь: {r['username']}\n"
-                text += f"   Дата: {r['timestamp']}\n\n"
-                keyboard.append([InlineKeyboardButton(f"📋 Поломка #{r['id']}", callback_data=f"view_report_{r['id']}")])
-            keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_panel")])
+                text += f"   Дата: {r['timestamp']}\n"
+                text += f"   Статус: {r['status']}\n"
+                if r.get('photo_file_id'):
+                    text += f"   📸 Есть фото\n"
+                text += "\n"
             
-            await query.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_panel")]]))
     
     elif data == "admin_stats":
         if user_id == ADMIN_ID:
@@ -402,46 +385,6 @@ inter@fa.ru"""
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_panel")]])
             )
             context.user_data['state'] = 'waiting_answer'
-            
-    # ========== НОВЫЕ ОБРАБОТЧИКИ ДЛЯ ПОЛОМОК ==========
-    elif data.startswith("view_report_"):
-        if user_id == ADMIN_ID:
-            report_id = int(data.split("_")[2])
-            r = get_report_by_id(report_id)
-            if not r:
-                await query.message.reply_text("⚠️ Поломка не найдена.")
-                return
-            
-            text = f"🔧 *Поломка #{r['id']}*\n\n"
-            text += f"👤 Пользователь: @{r['username']}\n"
-            text += f"🕐 Дата: {r['timestamp']}\n"
-            text += f"📝 Описание: {r['description']}\n"
-            text += f"📌 Статус: {'✅ Решено' if r['status'] == 'answered' else '⏳ Ожидает'}\n"
-            
-            keyboard = []
-            if r.get('photo_file_id'):
-                try:
-                    await query.message.reply_photo(photo=r['photo_file_id'], caption=text, parse_mode="Markdown")
-                except Exception:
-                    await query.message.reply_text(text, parse_mode="Markdown")
-            else:
-                await query.message.reply_text(text, parse_mode="Markdown")
-            
-            if r["status"] != "answered":
-                keyboard.append([InlineKeyboardButton("✏️ Ответить", callback_data=f"answer_report_{report_id}")])
-            keyboard.append([InlineKeyboardButton("🔙 К списку поломок", callback_data="admin_reports")])
-            
-            await query.message.reply_text("Выберите действие:", reply_markup=InlineKeyboardMarkup(keyboard))
-    
-    elif data.startswith("answer_report_"):
-        if user_id == ADMIN_ID:
-            report_id = int(data.split("_")[2])
-            context.user_data['answering_report'] = report_id
-            await query.message.reply_text(
-                f"✏️ Введите ответ для поломки #{report_id}:",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_reports")]])
-            )
-            context.user_data['state'] = 'waiting_report_answer'
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -508,36 +451,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 logger.error(f"Не удалось уведомить админа: {e}")
     
-    elif state == 'waiting_report_answer':
-        if user_id == ADMIN_ID:
-            report_id = context.user_data.get('answering_report')
-            if report_id:
-                answer_report(report_id, text)
-                r = get_report_by_id(report_id)
-                if r:
-                    try:
-                        await context.bot.send_message(
-                            r['user_id'],
-                            f"🔧 *Ответ на вашу поломку #{report_id}:*\n\n{text}",
-                            parse_mode="Markdown"
-                        )
-                        await update.message.reply_text(
-                            f"✅ Ответ на поломку #{report_id} отправлен пользователю.",
-                            reply_markup=get_admin_keyboard()
-                        )
-                    except Exception as e:
-                        await update.message.reply_text(
-                            f"⚠️ Не удалось отправить ответ пользователю. Ответ сохранён.",
-                            reply_markup=get_admin_keyboard()
-                        )
-                else:
-                    await update.message.reply_text(f"⚠️ Поломка #{report_id} не найдена.", reply_markup=get_admin_keyboard())
-                
-                context.user_data['state'] = None
-                context.user_data['answering_report'] = None
-            else:
-                await update.message.reply_text("⚠️ Не выбрана поломка для ответа.", reply_markup=get_admin_keyboard())
-    
     elif state == 'waiting_answer':
         if user_id == ADMIN_ID:
             question_id = context.user_data.get('answering_question')
@@ -586,7 +499,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['state'] = None
     context.user_data['answering_question'] = None
-    context.user_data['answering_report'] = None
     context.user_data['report_photos'] = []
     await update.message.reply_text("Действие отменено.", reply_markup=get_main_keyboard())
 
@@ -611,12 +523,18 @@ def main():
     application.add_error_handler(error_handler)
     
     print("✅ БОТ ГОТОВ К РАБОТЕ!")
-    
-    # Запускаем бота в главном потоке. Это блокирует выполнение здесь, 
-    # но Gunicorn уже запустил Flask отдельно, поэтому все работает.
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
-# ЗАПУСК БОТА ПРИ СТАРТЕ ПРИЛОЖЕНИЯ
-main()
+    # ЗАПУСК БОТА В ОТДЕЛЬНОМ ПОТОКЕ (чтобы не блокировать Flask)
+    def run_bot():
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
 
-# Flask (app) будет запущен Gunicorn'ом автоматически
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+
+    # ЗАПУСК FLASK, ЧТОБЫ RENDER ВИДЕЛ, ЧТО ПОРТ ЗАНЯТ
+    port = int(os.environ.get('PORT', 5000))
+    print(f"🌐 Запускаем Flask на порту {port}")
+    app.run(host='0.0.0.0', port=port)
+
+if __name__ == "__main__":
+    main()
