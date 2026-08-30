@@ -10,10 +10,10 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 # ================= НАСТРОЙКИ =================
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
-    print("❌ Токен не найден!")
+    print("❌ Токен не найден! Добавьте TELEGRAM_BOT_TOKEN в переменные окружения Render.")
     exit(1)
 
-ADMIN_ID = 1240591787
+ADMIN_ID = 1240591787  # ТВОЙ ID
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ def home():
 def health():
     return "OK", 200
 
-# ================= БАЗА ДАННЫХ =================
+# ================= БАЗА ДАННЫХ (JSON) =================
 DATA_FILE = "bot_data.json"
 
 def load_data():
@@ -529,15 +529,14 @@ def run_bot():
     print("✅ БОТ ГОТОВ К РАБОТЕ!")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
-# ================= ДЛЯ GUNICORN =================
-app = flask_app
-
-# ================= ГЛАВНЫЙ ЗАПУСК =================
+# ================= ОСНОВНОЙ ЗАПУСК =================
 if __name__ == "__main__":
+    # Запускаем бота в фоновом потоке
     bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
     print("🐍 Бот запущен в фоновом потоке")
     
+    # Запускаем Flask для Render
     port = int(os.environ.get("PORT", 10000))
     print(f"🌐 Запуск веб-сервера на порту {port}")
     flask_app.run(host="0.0.0.0", port=port)
