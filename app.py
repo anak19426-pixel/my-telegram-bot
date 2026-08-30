@@ -11,7 +11,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 # ================= НАСТРОЙКИ =================
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
-    print("❌ Токен не найден! Добавьте TELEGRAM_BOT_TOKEN в переменные окружения Render.")
+    print("❌ Токен не найден!")
     exit(1)
 
 ADMIN_ID = 1240591787
@@ -515,10 +515,15 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-# ================= ЗАПУСК БОТА В ПОТОКЕ =================
+# ================= ЗАПУСК БОТА (ИСПРАВЛЕННЫЙ) =================
 def run_bot():
-    # СОЗДАЁМ НОВЫЙ EVENT LOOP (ЭТО ИСПРАВЛЯЕТ ОШИБКУ!)
-    asyncio.set_event_loop(asyncio.new_event_loop())
+    try:
+        # ПЫТАЕМСЯ ПОЛУЧИТЬ ТЕКУЩИЙ EVENT LOOP
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # ЕСЛИ НЕТ — СОЗДАЁМ НОВЫЙ
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
     
     print("🚀 БОТ ЗАПУЩЕН!")
     application = Application.builder().token(TOKEN).build()
@@ -535,10 +540,12 @@ def run_bot():
 
 # ================= ОСНОВНОЙ ЗАПУСК =================
 if __name__ == "__main__":
+    # Запускаем бота в отдельном потоке
     bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
     print("🐍 Бот запущен в фоновом потоке")
     
+    # Запускаем Flask для Render
     port = int(os.environ.get("PORT", 10000))
     print(f"🌐 Запуск веб-сервера на порту {port}")
     flask_app.run(host="0.0.0.0", port=port)
