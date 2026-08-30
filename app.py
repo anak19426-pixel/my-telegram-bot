@@ -515,7 +515,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-# ================= ЗАПУСК БОТА (ИСПРАВЛЕННЫЙ) =================
+# ================= ЗАПУСК БОТА =================
 def run_bot():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -531,18 +531,15 @@ def run_bot():
     application.add_error_handler(error_handler)
     
     print("✅ БОТ ГОТОВ К РАБОТЕ!")
-    # ⚠️ ГЛАВНОЕ ИЗМЕНЕНИЕ: добавила signal_handlers=False
-    application.run_polling(
-        allowed_updates=Update.ALL_TYPES,
-        signal_handlers=False  # ОТКЛЮЧАЕМ СИГНАЛЫ, ЧТОБЫ РАБОТАТЬ В ФОНОВОМ ПОТОКЕ
-    )
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 # ================= ОСНОВНОЙ ЗАПУСК =================
 if __name__ == "__main__":
     bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
-    print("🐍 Бот запущен в фоновом потоке")
+    print("🟢 Бот запущен в фоновом потоке")
     
     port = int(os.environ.get("PORT", 10000))
-    print(f"🌐 Запуск веб-сервера на порту {port}")
+    print(f"🟣 Запуск веб-сервера на порту {port}")
     flask_app.run(host="0.0.0.0", port=port)
+ 
