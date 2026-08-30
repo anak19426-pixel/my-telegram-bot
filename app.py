@@ -316,7 +316,7 @@ inter@fa.ru"""
         if user_id == ADMIN_ID:
             await query.message.reply_text("Админ-панель:", reply_markup=get_admin_keyboard())
     
-    # ========== АДМИН-КНОПКИ ==========
+    # ========== АДМИН-КНОПКИ (БЕЗ MARKDOWN!) ==========
     elif data == "admin_panel":
         if user_id == ADMIN_ID:
             await query.message.reply_text("Панель администратора:", reply_markup=get_admin_keyboard())
@@ -328,7 +328,7 @@ inter@fa.ru"""
                 await query.message.reply_text("📋 Вопросов пока нет.")
                 return
             
-            text = "📋 *Все вопросы:*\n\n"
+            text = "📋 ВСЕ ВОПРОСЫ:\n\n"
             keyboard = []
             for q in questions[-10:]:
                 status = "✅" if q["answered"] else "⏳"
@@ -338,7 +338,7 @@ inter@fa.ru"""
                 keyboard.append([InlineKeyboardButton(f"📩 Ответить на вопрос #{q['id']}", callback_data=f"answer_question_{q['id']}")])
             keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_panel")])
             
-            await query.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     
     elif data.startswith("answer_question_"):
         if user_id == ADMIN_ID:
@@ -357,7 +357,7 @@ inter@fa.ru"""
                 await query.message.reply_text("🔧 Сообщений о поломках пока нет.")
                 return
             
-            text = "🔧 *Сообщения о поломках:*\n\n"
+            text = "🔧 ВСЕ ПОЛОМКИ:\n\n"
             keyboard = []
             for r in reports[-10:]:
                 text += f"📌 #{r['id']}\n"
@@ -370,7 +370,7 @@ inter@fa.ru"""
                 keyboard.append([InlineKeyboardButton(f"📸 Просмотр поломки #{r['id']}", callback_data=f"view_report_{r['id']}")])
             keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_panel")])
             
-            await query.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     
     elif data.startswith("view_report_"):
         if user_id == ADMIN_ID:
@@ -381,13 +381,13 @@ inter@fa.ru"""
                 await query.message.reply_text("❌ Поломка не найдена.")
                 return
             
-            text = f"📌 *Поломка #{report['id']}*\n\n"
+            text = f"📌 ПОЛОМКА #{report['id']}\n\n"
             text += f"👤 Пользователь: {report['username']}\n"
             text += f"📝 Описание: {report['description']}\n"
             text += f"📅 Дата: {report['timestamp']}\n"
             text += f"📊 Статус: {report['status']}\n"
             
-            await query.message.reply_text(text, parse_mode="Markdown")
+            await query.message.reply_text(text)
             
             if report.get('photo_file_id'):
                 try:
@@ -420,13 +420,13 @@ inter@fa.ru"""
     elif data == "admin_stats":
         if user_id == ADMIN_ID:
             total_q, answered_q, total_r = get_stats()
-            text = f"📊 *Статистика:*\n\n"
+            text = f"📊 СТАТИСТИКА:\n\n"
             text += f"📋 Всего вопросов: {total_q}\n"
             text += f"✅ Отвечено: {answered_q}\n"
             text += f"⏳ Ожидают ответа: {total_q - answered_q}\n\n"
             text += f"🔧 Сообщений о поломках: {total_r}"
             
-            await query.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_panel")]]))
+            await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_panel")]]))
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -457,10 +457,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await context.bot.send_message(
                     ADMIN_ID,
-                    f"📩 *Новый вопрос #{question_id}*\n\n"
+                    f"📩 НОВЫЙ ВОПРОС #{question_id}\n\n"
                     f"От: @{username}\n"
-                    f"Вопрос: {text[:200]}",
-                    parse_mode="Markdown"
+                    f"Вопрос: {text[:200]}"
                 )
             except Exception as e:
                 logger.error(f"Не удалось уведомить админа: {e}")
@@ -479,13 +478,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if user_id != ADMIN_ID:
             try:
-                admin_text = f"🔧 *Новая поломка #{report_id}*\n\n"
+                admin_text = f"🔧 НОВАЯ ПОЛОМКА #{report_id}\n\n"
                 admin_text += f"От: @{username}\n"
                 admin_text += f"Описание: {text[:200]}"
                 if photo_id:
                     admin_text += f"\n📸 Есть фото"
                 
-                await context.bot.send_message(ADMIN_ID, admin_text, parse_mode="Markdown")
+                await context.bot.send_message(ADMIN_ID, admin_text)
                 
                 if photo_id:
                     await context.bot.send_photo(ADMIN_ID, photo_id, caption=f"Фото к поломке #{report_id}")
@@ -503,8 +502,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     try:
                         await context.bot.send_message(
                             user_to_answer,
-                            f"📩 *Ответ на ваш вопрос #{question_id}:*\n\n{text}",
-                            parse_mode="Markdown"
+                            f"📩 Ответ на ваш вопрос #{question_id}:\n\n{text}"
                         )
                         await update.message.reply_text(
                             f"✅ Ответ на вопрос #{question_id} отправлен пользователю.",
@@ -533,8 +531,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     try:
                         await context.bot.send_message(
                             user_to_answer,
-                            f"📩 *Ответ по вашей поломке #{report_id}:*\n\n{text}",
-                            parse_mode="Markdown"
+                            f"📩 Ответ по вашей поломке #{report_id}:\n\n{text}"
                         )
                         data = load_data()
                         for r in data["reports"]:
