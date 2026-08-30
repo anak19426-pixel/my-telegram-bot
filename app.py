@@ -515,12 +515,14 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-# ================= ЗАПУСК БОТА =================
+# ================= ЗАПУСК FLASK В ФОНОВОМ ПОТОКЕ =================
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    print(f"🟣 Запуск веб-сервера на порту {port}")
+    flask_app.run(host="0.0.0.0", port=port)
+
+# ================= ЗАПУСК БОТА В ГЛАВНОМ ПОТОКЕ =================
 def run_bot():
-    # СОЗДАЁМ СВОЙ EVENT LOOP
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
     print("🚀 БОТ ЗАПУЩЕН!")
     application = Application.builder().token(TOKEN).build()
     
@@ -532,15 +534,15 @@ def run_bot():
     application.add_error_handler(error_handler)
     
     print("✅ БОТ ГОТОВ К РАБОТЕ!")
-    # ⚠️ УБИРАЕМ signal_handlers — ЭТО И ЕСТЬ РЕШЕНИЕ!
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 # ================= ОСНОВНОЙ ЗАПУСК =================
 if __name__ == "__main__":
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    print("🟢 Бот запущен в фоновом потоке")
+    # Запускаем Flask в фоновом потоке
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    print("🟢 Веб-сервер запущен в фоновом потоке")
     
-    port = int(os.environ.get("PORT", 10000))
-    print(f"🟣 Запуск веб-сервера на порту {port}")
-    flask_app.run(host="0.0.0.0", port=port)
+    # Запускаем бота в ГЛАВНОМ потоке (здесь нет ошибки с сигналами!)
+    run_bot()
+     
