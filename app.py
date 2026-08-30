@@ -10,10 +10,10 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 # ================= НАСТРОЙКИ =================
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
-    print("❌ Токен не найден! Добавьте TELEGRAM_BOT_TOKEN в переменные окружения Render.")
+    print("❌ Токен не найден!")
     exit(1)
 
-ADMIN_ID = 1240591787  # ТВОЙ ID
+ADMIN_ID = 1240591787
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ def home():
 def health():
     return "OK", 200
 
-# ================= БАЗА ДАННЫХ (JSON) =================
+# ================= БАЗА ДАННЫХ =================
 DATA_FILE = "bot_data.json"
 
 def load_data():
@@ -308,7 +308,6 @@ inter@fa.ru"""
         if user_id == ADMIN_ID:
             await query.message.reply_text("Админ-панель:", reply_markup=get_admin_keyboard())
     
-    # ========== АДМИН-КНОПКИ ==========
     elif data == "admin_panel":
         if user_id == ADMIN_ID:
             await query.message.reply_text("Панель администратора:", reply_markup=get_admin_keyboard())
@@ -530,14 +529,15 @@ def run_bot():
     print("✅ БОТ ГОТОВ К РАБОТЕ!")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
+# ================= ДЛЯ GUNICORN =================
+app = flask_app
+
 # ================= ГЛАВНЫЙ ЗАПУСК =================
 if __name__ == "__main__":
-    # Запускаем бота в фоновом потоке
     bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
     print("🐍 Бот запущен в фоновом потоке")
     
-    # Запускаем Flask для Render
     port = int(os.environ.get("PORT", 10000))
     print(f"🌐 Запуск веб-сервера на порту {port}")
     flask_app.run(host="0.0.0.0", port=port)
