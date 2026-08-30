@@ -1,3 +1,171 @@
+import os
+import json
+import logging
+import threading
+import asyncio
+from datetime import datetime
+from flask import Flask
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+
+# ================= НАСТРОЙКИ =================
+TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+if not TOKEN:
+    print("❌ Токен не найден!")
+    exit(1)
+
+ADMIN_ID = 1240591787
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# ================= FLASK =================
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def home():
+    return "🤖 Бот работает!", 200
+
+@flask_app.route('/health')
+def health():
+    return "OK", 200
+
+# ================= БАЗА ДАННЫХ =================
+DATA_FILE = "bot_data.json"
+
+def load_data():
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {"questions": [], "reports": [], "question_counter": 0, "report_counter": 0}
+    return {"questions": [], "reports": [], "question_counter": 0, "report_counter": 0}
+
+def save_data(data):
+    with open(DATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def save_question(user_id, username, question):
+    data = load_data()
+    data["question_counter"] += 1
+    question_data = {
+        "id": data["question_counter"],
+        "user_id": user_id,
+        "username": username or "Аноним",
+        "question": question,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "answered": False,
+        "answer": ""
+    }
+    data["questions"].append(question_data)
+    save_data(data)
+    return data["question_counter"]
+
+def save_report(user_id, username, description, photo_file_id=None):
+    data = load_data()
+    data["report_counter"] += 1
+    report_data = {
+        "id": data["report_counter"],
+        "user_id": user_id,
+        "username": username or "Аноним",
+        "description": description,
+        "photo_file_id": photo_file_id,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "status": "new"
+    }
+    data["reports"].append(report_data)
+    save_data(data)
+    return data["report_counter"]
+
+def get_all_questions():
+    data = load_data()
+    return data["questions"]
+
+def get_all_reports():
+    data = load_data()
+    return data["reports"]
+
+def get_unanswered_questions():
+    data = load_data()
+    return [q for q in data["questions"] if not q["answered"]]
+
+def answer_question(question_id, answer_text):
+    data = load_data()
+    for q in data["questions"]:
+        if q["id"] == question_id:
+            q["answered"] = True
+            q["answer"] = answer_text
+            break
+    save_data(data)
+
+def get_question_by_id(question_id):
+    data = load_data()
+    for q in data["questions"]:
+        if q["id"] == question_id:
+            return q
+    return None
+
+def get_report_by_id(report_id):
+    data = load_data()
+    for r in data["reports"]:
+        if r["id"] == report_id:
+            return r
+    return None
+
+def get_stats():
+    data = load_data()
+    total_questions = len(data["questions"])
+    answered_questions = sum(1 for q in data["questions"] if q["answered"])
+    total_reports = len(data["reports"])
+    return total_questions, answered_questions, total_reports
+
+# ================= КЛАВИАТУРЫ =================
+def get_main_keyboard():
+    keyboard = [
+        [InlineKeyboardButton("❓ Задать вопрос", callback_data="ask_question")],
+        [InlineKeyboardButton("🔧 Сообщить о поломке", callback_data="report_issue")],
+        [InlineKeyboardButton("📚 FAQ", callback_data="faq")],
+        [InlineKeyboardButton("📖 Учебный процесс", callback_data="study_process")],
+        [InlineKeyboardButton("🗺️ Карта корпуса", callback_data="map")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def get_admin_keyboard():
+    keyboard = [
+        [InlineKeyboardButton("📋 Все вопросы", callback_data="admin_questions")],
+        [InlineKeyboardButton("🔧 Все поломки", callback_data="admin_reports")],
+        [InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")],
+        [InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+# ================= ОБРАБОТЧИКИ =================
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    welcome_text = """Привет, студент! 👋
+
+Этот бот был создан Студенческим советом ВШУ, чтобы сделать твоё обучение комфортнее. Здесь ты можешь:
+
+- задать вопрос по учёбе;
+- сообщить о поломке в корпусе (сломанная мебель, неработающий свет и др.).
+
+Просто выбери нужную опцию в меню и напиши свой вопрос, а мы постараемся помочь. Ответ придёт в течение 2-х дней.
+
+В случае использования нецензурной лексики, оскорблений, некорректных формулировок или предоставления ложной информации, сообщение будет заблокировано, и ответа не последует.
+Бот гарантирует полную конфиденциальность и анонимность при выборе этой опции.
+
+Твой вклад важен - вместе мы сделаем учёбу комфортнее!"""
+
+    await update.message.reply_text(welcome_text, reply_markup=get_main_keyboard())
+    
+    if user_id == ADMIN_ID:
+        await update.message.reply_text(
+            "👋 Привет, Админ! Панель управления:",
+            reply_markup=get_admin_keyboard()
+        )
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -207,12 +375,7 @@ inter@fa.ru"""
     elif data.startswith("view_report_"):
         if user_id == ADMIN_ID:
             report_id = int(data.split("_")[2])
-            reports = get_all_reports()
-            report = None
-            for r in reports:
-                if r["id"] == report_id:
-                    report = r
-                    break
+            report = get_report_by_id(report_id)
             
             if not report:
                 await query.message.reply_text("❌ Поломка не найдена.")
@@ -224,10 +387,8 @@ inter@fa.ru"""
             text += f"📅 Дата: {report['timestamp']}\n"
             text += f"📊 Статус: {report['status']}\n"
             
-            # Отправляем описание
             await query.message.reply_text(text, parse_mode="Markdown")
             
-            # Отправляем фото, если есть
             if report.get('photo_file_id'):
                 try:
                     await query.message.reply_photo(
@@ -237,7 +398,6 @@ inter@fa.ru"""
                 except Exception as e:
                     await query.message.reply_text(f"❌ Не удалось загрузить фото: {e}")
             
-            # Кнопки для ответа
             keyboard = [
                 [InlineKeyboardButton(f"✏️ Ответить пользователю", callback_data=f"answer_report_{report_id}")],
                 [InlineKeyboardButton("🔙 Назад к списку", callback_data="admin_reports")],
@@ -267,4 +427,200 @@ inter@fa.ru"""
             text += f"🔧 Сообщений о поломках: {total_r}"
             
             await query.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_panel")]]))
-     
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    text = update.message.text
+    state = context.user_data.get('state')
+    username = update.effective_user.username or "Аноним"
+    
+    bad_words = ['мат', 'хуй', 'пизда', 'бля', 'сука', 'залупа', 'мудак', 'редиска', 'нах', 'еба']
+    has_bad_words = any(word in text.lower() for word in bad_words)
+    
+    if has_bad_words:
+        await update.message.reply_text(
+            "⚠️ Ваше сообщение содержит недопустимые выражения и было заблокировано.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]])
+        )
+        context.user_data['state'] = None
+        return
+    
+    if state == 'waiting_question':
+        question_id = save_question(user_id, username, text)
+        await update.message.reply_text(
+            "✅ Спасибо за вопрос. Ответ придёт в течение 2-х дней.",
+            reply_markup=get_main_keyboard()
+        )
+        context.user_data['state'] = None
+        
+        if user_id != ADMIN_ID:
+            try:
+                await context.bot.send_message(
+                    ADMIN_ID,
+                    f"📩 *Новый вопрос #{question_id}*\n\n"
+                    f"От: @{username}\n"
+                    f"Вопрос: {text[:200]}",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.error(f"Не удалось уведомить админа: {e}")
+    
+    elif state == 'waiting_report':
+        photos = context.user_data.get('report_photos', [])
+        photo_id = photos[0] if photos else None
+        report_id = save_report(user_id, username, text, photo_id)
+        
+        await update.message.reply_text(
+            "✅ Спасибо за инициативу! Мы разберемся с проблемой.",
+            reply_markup=get_main_keyboard()
+        )
+        context.user_data['state'] = None
+        context.user_data['report_photos'] = []
+        
+        if user_id != ADMIN_ID:
+            try:
+                admin_text = f"🔧 *Новая поломка #{report_id}*\n\n"
+                admin_text += f"От: @{username}\n"
+                admin_text += f"Описание: {text[:200]}"
+                if photo_id:
+                    admin_text += f"\n📸 Есть фото"
+                
+                await context.bot.send_message(ADMIN_ID, admin_text, parse_mode="Markdown")
+                
+                if photo_id:
+                    await context.bot.send_photo(ADMIN_ID, photo_id, caption=f"Фото к поломке #{report_id}")
+            except Exception as e:
+                logger.error(f"Не удалось уведомить админа: {e}")
+    
+    elif state == 'waiting_answer':
+        if user_id == ADMIN_ID:
+            question_id = context.user_data.get('answering_question')
+            if question_id:
+                answer_question(question_id, text)
+                q_data = get_question_by_id(question_id)
+                if q_data:
+                    user_to_answer = q_data['user_id']
+                    try:
+                        await context.bot.send_message(
+                            user_to_answer,
+                            f"📩 *Ответ на ваш вопрос #{question_id}:*\n\n{text}",
+                            parse_mode="Markdown"
+                        )
+                        await update.message.reply_text(
+                            f"✅ Ответ на вопрос #{question_id} отправлен пользователю.",
+                            reply_markup=get_admin_keyboard()
+                        )
+                    except Exception as e:
+                        await update.message.reply_text(
+                            f"⚠️ Не удалось отправить ответ пользователю. Ответ сохранён.",
+                            reply_markup=get_admin_keyboard()
+                        )
+                else:
+                    await update.message.reply_text(f"⚠️ Вопрос #{question_id} не найден.", reply_markup=get_admin_keyboard())
+                
+                context.user_data['state'] = None
+                context.user_data['answering_question'] = None
+            else:
+                await update.message.reply_text("⚠️ Не выбран вопрос для ответа.", reply_markup=get_admin_keyboard())
+    
+    elif state == 'waiting_answer_report':
+        if user_id == ADMIN_ID:
+            report_id = context.user_data.get('answering_report')
+            if report_id:
+                report = get_report_by_id(report_id)
+                if report:
+                    user_to_answer = report['user_id']
+                    try:
+                        await context.bot.send_message(
+                            user_to_answer,
+                            f"📩 *Ответ по вашей поломке #{report_id}:*\n\n{text}",
+                            parse_mode="Markdown"
+                        )
+                        data = load_data()
+                        for r in data["reports"]:
+                            if r["id"] == report_id:
+                                r["status"] = "answered"
+                                break
+                        save_data(data)
+                        
+                        await update.message.reply_text(
+                            f"✅ Ответ на поломку #{report_id} отправлен пользователю.",
+                            reply_markup=get_admin_keyboard()
+                        )
+                    except Exception as e:
+                        await update.message.reply_text(
+                            f"⚠️ Не удалось отправить ответ. Ошибка: {e}",
+                            reply_markup=get_admin_keyboard()
+                        )
+                else:
+                    await update.message.reply_text(f"⚠️ Поломка #{report_id} не найдена.", reply_markup=get_admin_keyboard())
+                
+                context.user_data['state'] = None
+                context.user_data['answering_report'] = None
+            else:
+                await update.message.reply_text("⚠️ Не выбрана поломка для ответа.", reply_markup=get_admin_keyboard())
+    
+    else:
+        await update.message.reply_text(
+            "Используйте кнопки меню.",
+            reply_markup=get_main_keyboard()
+        )
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    state = context.user_data.get('state')
+    
+    if state == 'waiting_report':
+        photo = update.message.photo[-1]
+        file_id = photo.file_id
+        context.user_data.setdefault('report_photos', []).append(file_id)
+        await update.message.reply_text("📸 Фото получено. Теперь напишите описание поломки.")
+    else:
+        await update.message.reply_text(
+            "Сейчас бот не ожидает фото. Используйте кнопку 'Сообщить о поломке'.",
+            reply_markup=get_main_keyboard()
+        )
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['state'] = None
+    context.user_data['answering_question'] = None
+    context.user_data['answering_report'] = None
+    context.user_data['report_photos'] = []
+    await update.message.reply_text("Действие отменено.", reply_markup=get_main_keyboard())
+
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.error(f"Update {update} caused error {context.error}")
+    try:
+        await update.message.reply_text("Произошла ошибка. Попробуйте позже.")
+    except:
+        pass
+
+# ================= ЗАПУСК FLASK В ФОНОВОМ ПОТОКЕ =================
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    print(f"🟣 Запуск веб-сервера на порту {port}")
+    flask_app.run(host="0.0.0.0", port=port)
+
+# ================= ЗАПУСК БОТА В ГЛАВНОМ ПОТОКЕ =================
+def run_bot():
+    print("🚀 БОТ ЗАПУЩЕН!")
+    application = Application.builder().token(TOKEN).build()
+    
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("cancel", cancel))
+    application.add_handler(CallbackQueryHandler(button_handler))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    application.add_error_handler(error_handler)
+    
+    print("✅ БОТ ГОТОВ К РАБОТЕ!")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+# ================= ОСНОВНОЙ ЗАПУСК =================
+if __name__ == "__main__":
+    # Запускаем Flask в фоновом потоке
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    print("🟢 Веб-сервер запущен в фоновом потоке")
+    
+    # Запускаем бота в ГЛАВНОМ потоке
+    run_bot()
