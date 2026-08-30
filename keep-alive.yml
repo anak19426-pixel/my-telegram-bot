@@ -1,0 +1,12 @@
+name: Keep Render Alive
+
+on:
+  schedule:
+    - cron: '*/14 * * * *'  # Запуск каждые 14 минут
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render Service
+        run: curl -s -o /dev/null -w "%{http_code}" https://my-telegram-bot-il2h.onrender.com
