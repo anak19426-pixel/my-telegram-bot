@@ -1,3 +1,4 @@
+
 import os
 import json
 import logging
@@ -11,8 +12,7 @@ if not TOKEN:
     print("❌ Токен не найден!")
     exit(1)
 
-# ТВОЙ ID АДМИНИСТРАТОРА (уже вставлен)
-ADMIN_ID = 1240591787
+ADMIN_ID = 1240591787  # ТВОЙ ID
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -141,7 +141,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(welcome_text, reply_markup=get_main_keyboard())
     
-    # Показываем админ-панель ТОЛЬКО если user_id совпадает с ADMIN_ID
     if user_id == ADMIN_ID:
         await update.message.reply_text(
             "👋 Привет, Админ! Панель управления:",
@@ -280,21 +279,25 @@ inter@fa.ru"""
             await query.message.reply_text("❌ Карты временно недоступны. Попробуйте позже.")
             return
         
-        for path in valid_paths:
+        # Отправляем все карты
+        for i, path in enumerate(valid_paths):
             try:
                 with open(path, 'rb') as f:
-                    await query.message.reply_photo(photo=f)
+                    if i == 0:
+                        await query.message.reply_photo(photo=f, caption="🗺️ Схемы корпусов:")
+                    else:
+                        await query.message.reply_photo(photo=f)
             except Exception as e:
                 logger.error(f"Ошибка при отправке карты {path}: {e}")
         
-        await query.message.reply_text("🗺️ Схемы корпусов", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]]))
+        await query.message.reply_text("Все карты отправлены!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]]))
     
     elif data == "back_to_main":
         await query.message.reply_text("Главное меню:", reply_markup=get_main_keyboard())
         if user_id == ADMIN_ID:
             await query.message.reply_text("Админ-панель:", reply_markup=get_admin_keyboard())
     
-    # ========== АДМИН-КНОПКИ (доступны только ADMIN_ID) ==========
+    # ========== АДМИН-КНОПКИ ==========
     elif data == "admin_panel":
         if user_id == ADMIN_ID:
             await query.message.reply_text("Панель администратора:", reply_markup=get_admin_keyboard())
@@ -307,7 +310,7 @@ inter@fa.ru"""
                 return
             
             text = "📋 *Все вопросы:*\n\n"
-            for q in questions[-10:]:  # Последние 10
+            for q in questions[-10:]:
                 status = "✅" if q["answered"] else "⏳"
                 text += f"{status} #{q['id']} | {q['question'][:50]}...\n"
                 text += f"   Пользователь: {q['username']}\n"
@@ -323,11 +326,14 @@ inter@fa.ru"""
                 return
             
             text = "🔧 *Сообщения о поломках:*\n\n"
-            for r in reports[-10:]:  # Последние 10
+            for r in reports[-10:]:
                 text += f"#{r['id']} | {r['description'][:50]}...\n"
                 text += f"   Пользователь: {r['username']}\n"
                 text += f"   Дата: {r['timestamp']}\n"
-                text += f"   Статус: {r['status']}\n\n"
+                text += f"   Статус: {r['status']}\n"
+                if r.get('photo_file_id'):
+                    text += f"   📸 Есть фото\n"
+                text += "\n"
             
             await query.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_panel")]]))
     
@@ -351,7 +357,7 @@ inter@fa.ru"""
             
             text = "✏️ *Выберите вопрос для ответа:*\n\n"
             keyboard = []
-            for q in unanswered[:10]:  # Показываем первые 10
+            for q in unanswered[:10]:
                 text += f"#{q['id']} | {q['question'][:50]}...\n"
                 text += f"   Пользователь: {q['username']}\n"
                 text += f"   Дата: {q['timestamp']}\n\n"
@@ -425,11 +431,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 admin_text += f"От: @{username}\n"
                 admin_text += f"Описание: {text[:200]}"
                 if photo_id:
-                    admin_text += f"\nЕсть фото: ID {photo_id}"
+                    admin_text += f"\n📸 Есть фото"
                 
-                await context.bot.send_message(ADMIN_ID, admin_text)
+                await context.bot.send_message(ADMIN_ID, admin_text, parse_mode="Markdown")
+                
+                # ОТПРАВЛЯЕМ ФОТО АДМИНУ!
                 if photo_id:
-                    await context.bot.send_photo(ADMIN_ID, photo_id)
+                    await context.bot.send_photo(ADMIN_ID, photo_id, caption=f"Фото к поломке #{report_id}")
             except Exception as e:
                 logger.error(f"Не удалось уведомить админа: {e}")
     
@@ -444,7 +452,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     try:
                         await context.bot.send_message(
                             user_to_answer,
-                            f"📩 *Ответ на ваш вопрос #{question_id}:*\n\n{text}"
+                            f"📩 *Ответ на ваш вопрос #{question_id}:*\n\n{text}",
+                            parse_mode="Markdown"
                         )
                         await update.message.reply_text(
                             f"✅ Ответ на вопрос #{question_id} отправлен пользователю.",
